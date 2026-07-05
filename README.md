@@ -3,6 +3,152 @@
 
 ## Moving to multiple point
 <details>
+  <summary>Code2</summary>
+
+```C
+#include <webots/robot.h>
+#include <webots/motor.h>
+#include <webots/gps.h>
+#include <webots/inertial_unit.h>
+#include <math.h>
+#include <stdio.h>
+
+#define MAX_SPEED 6.67
+#define WHEEL_RADIUS 0.033
+#define AXLE_LENGTH 0.160
+
+// Định nghĩa các trạng thái của robot
+#define STATE_TURN 0
+#define STATE_FORWARD 1
+
+typedef struct {
+  double x;
+  double y;
+} Waypoint;
+
+int main(int argc, char **argv) {
+  wb_robot_init();
+  int time_step = (int)wb_robot_get_basic_time_step();
+
+  WbDeviceTag left_motor = wb_robot_get_device("left wheel motor");
+  WbDeviceTag right_motor = wb_robot_get_device("right wheel motor");
+  
+  wb_motor_set_position(left_motor, INFINITY);
+  wb_motor_set_position(right_motor, INFINITY);
+  wb_motor_set_velocity(left_motor, 0.0);
+  wb_motor_set_velocity(right_motor, 0.0);
+
+  WbDeviceTag gps = wb_robot_get_device("gps");
+  wb_gps_enable(gps, time_step);
+
+  WbDeviceTag imu = wb_robot_get_device("inertial unit");
+  wb_inertial_unit_enable(imu, time_step);
+
+  Waypoint path[] = {
+    {1.0, 0.0},   
+    {1.0, 1.0},   
+    {0.0, 1.0},   
+    {0.0, 0.0}    
+  };
+  
+  int total_waypoints = sizeof(path) / sizeof(path[0]);
+  int current_wp = 0; 
+  
+  // Khởi tạo trạng thái ban đầu là XOAY
+  int current_state = STATE_TURN; 
+
+  double Kp_angular = 4.0;
+  // Bán kính chấp nhận góc (Tolerance angle) - Xấp xỉ 2.8 độ
+  double angle_tolerance = 0.05; 
+
+  while (wb_robot_step(time_step) != -1) {
+    const double *pos = wb_gps_get_values(gps);
+    const double *rpy = wb_inertial_unit_get_roll_pitch_yaw(imu);
+
+    if (isnan(pos[0])) continue;
+
+    double current_x = pos[0];
+    double current_y = pos[1];
+    double current_yaw = rpy[2]; 
+    
+    double target_x = path[current_wp].x;
+    double target_y = path[current_wp].y;
+
+    double dx = target_x - current_x;
+    double dy = target_y - current_y;
+    double distance = sqrt(dx * dx + dy * dy);
+    
+    // Kiểm tra khoảng cách
+    double distance_tolerance = 0.05; 
+    if (distance < distance_tolerance) {
+      current_wp++; 
+      
+      if (current_wp >= total_waypoints) {
+        wb_motor_set_velocity(left_motor, 0.0);
+        wb_motor_set_velocity(right_motor, 0.0);
+        printf("Đã hoàn thành toàn bộ hành trình!\n");
+        break; 
+      } else {
+        printf("Đã đến điểm %d, chuyển mục tiêu. Bắt đầu xoay...\n", current_wp);
+        // Quan trọng: Đặt lại trạng thái thành XOAY cho điểm mới
+        current_state = STATE_TURN; 
+        continue; 
+      }
+    }
+        
+    double target_angle = atan2(dy, dx);
+    double angle_error = target_angle - current_yaw;
+    while (angle_error > M_PI) angle_error -= 2.0 * M_PI;
+    while (angle_error < -M_PI) angle_error += 2.0 * M_PI;
+        
+    double v_left = 0.0;
+    double v_right = 0.0;
+
+    // --- MÁY TRẠNG THÁI (STATE MACHINE) ---
+    if (current_state == STATE_TURN) {
+      // TRẠNG THÁI 1: Chỉ xoay tại chỗ
+      if (fabs(angle_error) > angle_tolerance) {
+        double angular_velocity = Kp_angular * angle_error;
+        // Tốc độ thẳng = 0, chỉ áp dụng tốc độ xoay
+        v_left = (-angular_velocity * AXLE_LENGTH / 2.0) / WHEEL_RADIUS;
+        v_right = (angular_velocity * AXLE_LENGTH / 2.0) / WHEEL_RADIUS;
+      } else {
+        // Nếu góc đã chuẩn, chuyển sang trạng thái Tiến
+        printf("Đã xoay xong, bắt đầu tiến...\n");
+        current_state = STATE_FORWARD;
+      }
+    } 
+    else if (current_state == STATE_FORWARD) {
+      // TRẠNG THÁI 2: Tiến thẳng
+      // Nếu robot bị lệch góc quá lớn (ví dụ bánh xe trượt), bắt nó dừng lại xoay tiếp
+      if (fabs(angle_error) > 0.15) { // Lệch khoảng 8.5 độ
+        current_state = STATE_TURN;
+      } else {
+        double linear_velocity = 0.22; // Tốc độ tiến cố định (tối đa của Burger)
+        double angular_velocity = Kp_angular * angle_error; // Bù trừ góc nhẹ để giữ thẳng
+        
+        v_left = (linear_velocity - angular_velocity * AXLE_LENGTH / 2.0) / WHEEL_RADIUS;
+        v_right = (linear_velocity + angular_velocity * AXLE_LENGTH / 2.0) / WHEEL_RADIUS;
+      }
+    }
+
+    // Giới hạn vận tốc động cơ
+    if (v_left > MAX_SPEED) v_left = MAX_SPEED;
+    if (v_left < -MAX_SPEED) v_left = -MAX_SPEED;
+    if (v_right > MAX_SPEED) v_right = MAX_SPEED;
+    if (v_right < -MAX_SPEED) v_right = -MAX_SPEED;
+    
+    wb_motor_set_velocity(left_motor, v_left);
+    wb_motor_set_velocity(right_motor, v_right);
+  }
+
+  wb_robot_cleanup();
+  return 0;
+}
+
+```
+
+
   <summary>Code</summary>
 
 ```C
