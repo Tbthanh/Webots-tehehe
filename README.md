@@ -1,6 +1,10 @@
 # Webots-tehehe
 
+
 ## Moving to multiple point
+<details>
+  <summary>Code</summary>
+
 ```C
 #include <webots/robot.h>
 #include <webots/motor.h>
@@ -115,10 +119,13 @@ int main(int argc, char **argv) {
 }
 
 ```
+</details>
 
 
 ## Moving to 1 point
-
+<details>
+  <summary>Code</summary>
+  
 ```C
 #include <webots/robot.h>
 #include <webots/motor.h>
@@ -225,3 +232,7 @@ int main(int argc, char **argv) {
 }
 
 ```
+</details>
+
+
+
