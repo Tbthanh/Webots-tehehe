@@ -147,7 +147,9 @@ int main(int argc, char **argv) {
 }
 
 ```
+</details>
 
+<details>
 
   <summary>Code</summary>
 
